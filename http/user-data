@@ -1,0 +1,150 @@
+#cloud-config
+autoinstall:
+  version: 1
+  
+  # Disable proxy completely
+  proxy: ""
+  
+  # Locale and keyboard
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  
+  # Identity - default user setup
+  identity:
+    hostname: ubuntu-pc
+    username: ubuser
+    # Password: 'ubuser' (hashed with SHA-512)
+    # Generated with: openssl passwd -6 -salt saltsalt ubuser
+    password: "$6$saltsalt$OHJ97F2DB2IkwLO2WDSpVGodraGc1DCwQndzQh.2F2.5SAumdTuttLuMjiKWNGuVDFd1zXkFPHEb4Ml0HElFh/"
+  
+  # SSH configuration
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys: []
+  
+  # Network configuration - DHCP on all interfaces except loopback
+  network:
+    version: 2
+    ethernets:
+      all-en:
+        match:
+          name: "en*"
+        dhcp4: true
+        optional: true
+      all-eth:
+        match:
+          name: "eth*"
+        dhcp4: true
+        optional: true
+
+  # Automatic disk partitioning - UEFI with GPT
+  storage:
+    config:
+      # Use first disk
+      - id: disk0
+        type: disk
+        ptable: gpt
+        wipe: superblock-recursive
+        preserve: false
+        grub_device: false
+        match:
+          size: largest
+      # EFI System Partition (ESP)
+      - id: efi-partition
+        type: partition
+        device: disk0
+        size: 512M
+        flag: boot
+        grub_device: true
+      - id: efi-format
+        type: format
+        fstype: fat32
+        volume: efi-partition
+      # Boot partition
+      - id: boot-partition
+        type: partition
+        device: disk0
+        size: 1G
+      - id: boot-format
+        type: format
+        fstype: ext4
+        volume: boot-partition
+      # LVM partition (rest of disk)
+      - id: lvm-partition
+        type: partition
+        device: disk0
+        size: -1
+      - id: vg0
+        type: lvm_volgroup
+        name: vg0
+        devices:
+          - lvm-partition
+      # Root logical volume
+      - id: lv-root
+        type: lvm_partition
+        volgroup: vg0
+        name: root
+        size: -1
+      - id: root-format
+        type: format
+        fstype: ext4
+        volume: lv-root
+      # Mount points
+      - id: mount-root
+        type: mount
+        path: /
+        device: root-format
+      - id: mount-boot
+        type: mount
+        path: /boot
+        device: boot-format
+      - id: mount-efi
+        type: mount
+        path: /boot/efi
+        device: efi-format
+  
+  # Timezone
+  timezone: UTC
+  
+  # APT configuration - no proxy, no mirror selection
+  apt:
+    geoip: false
+    preserve_sources_list: true
+    disable_components: []
+    proxy: ""
+    http_proxy: ""
+    https_proxy: ""
+    ftp_proxy: ""
+  
+  # Minimal packages - rest installed by Packer provisioners
+  packages:
+    - openssh-server
+    - sudo
+    - curl
+    - wget
+  
+  # Late commands - run after user is created in target system
+  late-commands:
+    # Remove casper/live-boot packages that cause issues when cloning
+    - curtin in-target --target=/target -- apt-get purge -y casper lupin-casper 2>/dev/null || true
+    - curtin in-target --target=/target -- apt-get autoremove -y 2>/dev/null || true
+    # Ensure SSH allows password authentication
+    - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /target/etc/ssh/sshd_config
+    - sed -i 's/^#*KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' /target/etc/ssh/sshd_config
+    - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /target/etc/ssh/sshd_config
+    - sed -i 's/^#*UsePAM.*/UsePAM yes/' /target/etc/ssh/sshd_config
+    # Also update sshd_config.d if present
+    - echo 'PasswordAuthentication yes' > /target/etc/ssh/sshd_config.d/50-cloud-init.conf
+    # Create sudoers file for passwordless sudo
+    - echo 'ubuser ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuser
+    - chmod 440 /target/etc/sudoers.d/ubuser
+    # Ensure SSH service is enabled
+    - curtin in-target --target=/target -- systemctl enable ssh
+  
+  # No interactive sections
+  interactive-sections: []
+  
+  # Reboot after installation
+  shutdown: reboot

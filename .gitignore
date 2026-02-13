@@ -1,0 +1,37 @@
+# Packer output
+output/
+
+# UEFI vars files
+OVMF_VARS.fd
+test_OVMF_VARS.fd
+
+# Test VM files
+test-target.qcow2
+*.qcow2
+
+# Packer cache
+packer_cache/
+
+# ISO files
+*.iso
+ubuntu-*.iso
+
+# ISO build working directory
+iso-work/
+
+# Compressed images
+*.img.gz
+
+# Logs
+*.log
+crash.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
